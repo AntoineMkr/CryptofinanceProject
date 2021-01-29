@@ -4,13 +4,18 @@
 import math
 import os
 import random as rnd
-
 rnd.seed()
-
-from time import process_time, sleep
-
+import time
+# Pour l'interface graphique
+import tkinter
+import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
+# To display curves in the GUI
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
+                                               NavigationToolbar2Tk)
+# Implement the default Matplotlib key bindings
+from matplotlib.figure import Figure
 from plotly.subplots import make_subplots
 
 #Creation de la classe "blockchain"
@@ -18,11 +23,10 @@ from plotly.subplots import make_subplots
 class Blockchain:
     """
     classe représentant la blockchain.
-    Elle a plusieurs paramètres, un tableau de blocs, la récompense de minage, un mempool
+    Elle n'a comme variable d'instance qu'un tableau représentant les blocs
     """
     def __init__(self):
         self.blocks = []
-        self.miningReward = 6.3
     
     def __repr__(self):
         return "%s" % self.blocks 
@@ -42,71 +46,40 @@ class Blockchain:
 # Selfish mining attack
 
 def attackCycle(q, connectivite, chaine, NbrCycles):
+    """
+    pour simuler un cycle d'attaque
+    q est le hashrate
+    """
     blocksMined = 0
-
+    coinbase = 6.25
     bchainAttaquant = Blockchain()
     tailleInitiale = len(chaine.getBlocks())
     bchainOff = chaine
-    
-    blockCounterBeforeAdj = 0
-    timeToAdj = 0
+    blockCounterBeforeAdjustment = 0
+    timeToAdjustment = 0
     miningTime = 600
     duree = 0
-
-    tab_returns = [0]
-
-    tab_duree = [0]
     n = 1
+    esperanceGains = 0
     while n <= NbrCycles:
-        ### PREMINING ###
         bchainAttaquant.modifChain(bchainOff.getBlocks()) 
-        #Compteur pour connaitre l'ordre de minage (exple: "H mines one block before S validates a second"), représente l'état
+
+        #Compteur pour connaitre l'ordre de minage (exple: "H mines one block before S validates a second"), représente l'état de l'attaque
         counter = 0
-        while True:
-
-            # Ajustement de difficulte
-            if (blockCounterBeforeAdj >= 2016):
-                miningTime = miningTime * (2016 * 600) / timeToAdj
-                timeToAdj = 0
-                blockCounterBeforeAdj = 0
-                
-                tab_duree.append(duree)
-                tab_returns.append(blocksMined/duree * 100)
-            
-            duree += miningTime
-            timeToAdj += miningTime
-            
-            # mining
-            resultat = np.random.binomial(1, q)
-            if (resultat == 0):
-                bchainOff.addBlock()
-                blockCounterBeforeAdj += 1
-                bchainAttaquant.modifChain(bchainOff.getBlocks()) 
-
-
-            if(resultat == 1):
-                bchainAttaquant.addBlock()
-                # if the attackers mines a block, the attack starts
-                counter += 1
-                break
 
         ############# DEBUT DE L'ATTAQUE #################
         # S mines on top of the last block of the official blockchain
-        # print(len(bchainOff.getBlocks()))
-        # print(len(bchainAttaquant.getBlocks()))
-        # n+=1
+
         while True:
 
-            # Difficulty adustment
-            if (blockCounterBeforeAdj >= 2016):
-                miningTime = miningTime * (2016 * 600) / timeToAdj
-                timeToAdj = 0
-                blockCounterBeforeAdj = 0
-                tab_duree.append(duree)
-                tab_returns.append(blocksMined/duree *100)
+            # # Difficulty adustment
+            if (blockCounterBeforeAdjustment >= 2016):
+                miningTime = miningTime * (2016 * 600) / timeToAdjustment
+                timeToAdjustment = 0
+                blockCounterBeforeAdjustment = 0
 
             duree += miningTime
-            timeToAdj += miningTime
+            timeToAdjustment += miningTime
 
             # The attacker mines with a probability q
             resultat = np.random.binomial(1, q)
@@ -115,103 +88,128 @@ def attackCycle(q, connectivite, chaine, NbrCycles):
 
             # If H mines a block, different scenarios
             if(resultat == 0):
-                #scenario 1, H mines first, that is it, end of the cycle
-
-                #scenatio 2, If S mines first but H mines a block before S mines a second one, STATE 0'
+                if(counter == 0):
+                    bchainOff.addBlock()
+                    break
+                #scenatio 1, If S mines first but H mines a block before S mines a second one, STATE 0'
                 if(counter == 1 & ecartEntreChaines == 1):
                     bchainOff.addBlock()
-                    blockCounterBeforeAdj += 1
+                    blockCounterBeforeAdjustment += 1
 
                     # Competition, 3 solutions: q / connectivite * p / (1- connectivite) * p
                     #the attackers mines on top of his fork
-                    if(rnd.random() < q):
+                    tmp = rnd.random()
+                    if(tmp < q):
                         bchainAttaquant.addBlock()
                         bchainOff.modifChain(bchainAttaquant.getBlocks())
                         blocksMined += 2  # Supposed to be + 2
                         n += 1
-                        # counter = 0
+                        # duree += miningTime
 
                         break
                     else:
                         #honest mine on top of attackers' fork
-                        if(rnd.random() < (connectivite)*(1- q)):
+                        if(tmp < (connectivite)*(1 - q)):
                             bchainOff.modifChain(bchainAttaquant.getBlocks())
                             blocksMined += 1  # Supposed to be + 1
-
                             bchainOff.addBlock()
-                            duree += miningTime
-                            
-                            # counter = 0
+                            # duree += miningTime
                             n += 1
                             break
                         #honest mine on honest chain
                         else:
                             bchainOff.addBlock()
-                            # counter = 0
                             n += 1
+                            # duree += miningTime
                             break
-
+                #If S mines twice but H mines before the third block, S publishes its fork and earn 2 coinbases                    
                 if(counter == 2 & ecartEntreChaines == 2):
                     bchainOff.addBlock()
-                    blockCounterBeforeAdj += 1
-
+                    blockCounterBeforeAdjustment += 1
                     bchainOff.modifChain(bchainAttaquant.getBlocks())
                     blocksMined += 2
                     n +=1
                     break
 
-                # if(counter > 2):
-                #     bchainOff.addBlock()
-                #     blockCounterBeforeAdj += 1
-                #     counter -= 1
                 # If len(Attacker Fork) - len(Official fork) >=2 and if H mines a block
-                # the attacker publishes its fork
+                # the attacker publishes its fork of the size of the honnest chain
                 if(ecartEntreChaines > 2):
                     bchainOff.addBlock()
-                    blockCounterBeforeAdj += 1
+                    blockCounterBeforeAdjustment += 1
                     tailleOff = len(bchainOff.getBlocks())
                     bchainOff.modifChain(bchainAttaquant.getBlocks()[0:tailleOff-1])
                     blocksMined += 1
                     counter -=1
                     
-                    
-
-            
+            # the attacker mines another block        
             if(resultat == 1):
                 bchainAttaquant.addBlock()
-                # if(counter >= 2):
-                #     blocksMined +=1
                 counter += 1
-        
-        tab_duree.append(duree)
-        tab_returns.append(blocksMined/duree * 100)
 
-        
-    # return blocksMined/duree * 100, duree, len(bchainOff.getBlocks())
-    return tab_returns, tab_duree
+        esperanceGains = (blocksMined * coinbase)/(duree) 
+
+    return esperanceGains
+
+#### PARTIE DU CODE CONCERNANT L'INTERFACE GRAPHIQUE ####
+
+root = tkinter.Tk()
+root.wm_title("Simulation de minage égoïste")
+fig = Figure(figsize=(5, 4), dpi=100)
+
+# To create a canvas for the figure
+canvas = FigureCanvasTkAgg(fig, master=root) 
+canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+
+# To create a toolbar under the figure
+toolbar = NavigationToolbar2Tk(canvas, root)
+toolbar.update()
+canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+
+
+
+def calculateRatiosForListOfHashrates(gamma, NbrCycles):
+    # liste de hashrate, doit aller de 0.01 à 1
+    listeDeHashrate = [0] * 49
+    # lsite qui contient les esperances de gains
+    listeEsperanceGains = [0] * 49
     
-def CreationChart(tab1, tab2):
+    for idx in range(1,50):
+        #l'attaque est générée pour chaque idx, variable représentant q, le hashrate de l'attaquant
+        bitcoin = Blockchain()
 
-    # fig = go.Figure(data=go.Scatter(x=dataframe.index, y=dataframe['Sentiment'], name="Sentiment"))
-    # if(len(args) != 0):
-    #     fig2 = go.Figure(data=go.Scatter(x=args[0]['Date'], y=args[0]['Dernier'], name="Bitcoin price"))
-    fig = go.Figure(go.Scatter(x=tab2, y=tab1, name="rewards"))
+        listeEsperanceGains[idx-1] = attackCycle(idx/100, gamma, bitcoin, NbrCycles)
+        listeDeHashrate[idx-1] = idx/100
 
-    fig.show()
+    return listeEsperanceGains, listeDeHashrate
 
-def Attaque():
+#Fonction pour mettre à jour les params.
+def simulationDesAttaques(event):
+
+    fig.clear()
+    #On génère l'attaque 
+    listeEsperanceGains, listeDeHashrate = calculateRatiosForListOfHashrates(gamma.get()/100, nbrAttaques.get())
+
+    #Espérance de gains en fonction du hashrate, concerne l'attaquant
+    fig.add_subplot(111).plot(listeDeHashrate, listeEsperanceGains, label='minage égoïste')
+    #gains des mineurs honnetes, c'est une droite
+    y1 = [0] * 49
+    for i in range(len(y1)):
+        y1[i]=(listeDeHashrate[i]*6.25)/600
+    fig.add_subplot(111).plot(listeDeHashrate, y1, label='stratégie honnête')
     
-    bitcoin = Blockchain()
-    # print(attackCycle(0.6, 0.3, bitcoin, 5)
+    fig.add_subplot(111).legend(loc='best')
+    fig.add_subplot(111).set_xlabel('Hashrate')
+    fig.add_subplot(111).set_ylabel('Esperance de gain')
+    fig.add_subplot(111).set_title('Simulation de minage égoïste')
+    canvas.draw()
 
-    (tab1, tab2) = attackCycle(0.6, 0.3, bitcoin, 20)
-    print(tab1)
-    print()
-    
-    print(tab2)
-    
-    CreationChart(tab1, tab2)
+#Pour créer les "sliders"
+gamma = tkinter.Scale(master=root, from_=0,to=100, orient=tkinter.HORIZONTAL, length=200,
+                                        label="gamma : divisé par 100. connectivité", command=simulationDesAttaques)
+gamma.pack(side=tkinter.LEFT)
 
+nbrAttaques = tkinter.Scale(master=root, from_=1, to=500, orient=tkinter.HORIZONTAL, length=200,
+                                  label="n : nbr d'attaques", command=simulationDesAttaques)
+nbrAttaques.pack(side=tkinter.RIGHT)
 
-
-Attaque()
+tkinter.mainloop()
